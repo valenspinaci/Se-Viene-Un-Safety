@@ -29,6 +29,5 @@ def test_pole_microsectors_time():
             print(r.text)
     except Exception as e:
         print(f"Exception: {e}")
-
 if __name__ == "__main__":
     test_pole_microsectors_time()

@@ -4,6 +4,8 @@ import datetime
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 import fastf1
 import pandas as pd
 
@@ -26,12 +28,11 @@ def startup_event():
         os.makedirs(cache_dir)
     fastf1.Cache.enable_cache(cache_dir)
 
-@app.get("/")
-def read_root():
-    return {
-        "message": "FastF1 CSV Exporter API is running.",
-        "docs_url": "http://127.0.0.1:8000/docs"
-    }
+@app.get("/api/health")
+def health():
+    return {"ok": True}
+
+
 
 @app.get("/health")
 def health():
@@ -92,6 +93,63 @@ def get_drivers(year: int, event: str, session: str):
         return drivers_info
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/latest/event")
+def get_latest_event():
+    try:
+        now = datetime.datetime.now()
+        current_year = now.year
+        
+        # Helper to find latest past event in a given year
+        def find_latest_in_year(y):
+            schedule = fastf1.get_event_schedule(y)
+            # Filter events that have happened (EventDate <= now)
+            # fastf1 EventDate is usually datetime object
+            # schedule['EventDate'] might be what we check.
+            # Also exclude testing? 'Official' usually implies RoundNumber > 0
+            
+            # Ensure EventDate is datetime
+            if 'EventDate' not in schedule.columns:
+                return None
+                
+            # Filter: Past events
+            # We strictly want events where the race/event start has passed.
+            past_events = schedule[schedule['EventDate'] <= now]
+            
+            # Filter out testing if possible (RoundNumber > 0)
+            if 'RoundNumber' in past_events.columns:
+                past_events = past_events[past_events['RoundNumber'] > 0]
+                
+            if past_events.empty:
+                return None
+                
+            # Get the last one (latest date)
+            latest = past_events.iloc[-1]
+            return latest
+
+        latest_event = find_latest_in_year(current_year)
+        final_year = current_year
+        
+        # If no event yet in current year (early season), check previous year
+        if latest_event is None:
+            latest_event = find_latest_in_year(current_year - 1)
+            final_year = current_year - 1
+            
+        if latest_event is None:
+            return {"found": False}
+            
+        return {
+            "found": True,
+            "year": final_year,
+            "event": latest_event['EventName'],
+            "session": "R" # Default to Race
+        }
+            
+    except Exception as e:
+        print(f"Error fetching latest event: {e}")
+        # Don't crash the app, just return not found
+        return {"found": False, "error": str(e)}
 
 @app.get("/export.csv")
 def export_csv(
@@ -594,6 +652,24 @@ def export_csv(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Serve React App (Must be last to avoid shadowing API routes)
+if os.path.exists("dist"):
+    app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_react_app(full_path: str):
+        if full_path and os.path.exists(f"dist/{full_path}"):
+            return FileResponse(f"dist/{full_path}")
+        return FileResponse("dist/index.html")
+else:
+    @app.get("/")
+    def read_root():
+        return {
+            "message": "FastF1 CSV Exporter API is running. (Frontend not found in /dist)",
+            "docs_url": "http://127.0.0.1:8000/docs"
+        }
 
 if __name__ == "__main__":
     import uvicorn

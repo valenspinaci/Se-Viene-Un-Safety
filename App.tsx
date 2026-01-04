@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Year,
   Event,
@@ -109,87 +109,136 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
+  // New State for Notification
+  const [latestEvent, setLatestEvent] = useState<{ year: number, event: string, session: string } | null>(null);
+
+  // Helper fetchers
+  const fetchEvents = async (year: string) => {
+    const res = await fetch(`/options/events?year=${year}`);
+    if (!res.ok) throw new Error('Failed to fetch events');
+    return res.json();
+  };
+
+  const fetchSessions = async (year: string, event: string) => {
+    const res = await fetch(`/options/sessions?year=${year}&event=${event}`);
+    if (!res.ok) throw new Error('Failed to fetch sessions');
+    return res.json();
+  };
+
+  const fetchDrivers = async (year: string, event: string, session: string) => {
+    const res = await fetch(`/options/drivers?year=${year}&event=${event}&session=${session}`);
+    if (!res.ok) throw new Error('Failed to fetch drivers');
+    const data = await res.json();
+    return data.map((d: any) => d.code).filter(Boolean);
+  };
+
   // Initial load
   useEffect(() => {
-    const fetchYears = async () => {
+    const init = async () => {
       try {
         setLoading(true);
+        // Load years
         const res = await fetch('/options/years');
         if (!res.ok) throw new Error('Failed to fetch years');
         const data = await res.json();
-        // Backend returns oldest to newest? Prompt said 2018..current-1.
-        // Let's sort descending for UI convenience.
         setOptions(prev => ({ ...prev, years: data.sort((a: number, b: number) => b - a) }));
+
+        // Check for latest event
+        const latestRes = await fetch('/latest/event');
+        if (latestRes.ok) {
+          const latestData = await latestRes.json();
+          if (latestData.found) {
+            setLatestEvent(latestData);
+          }
+        }
       } catch (err) {
-        setError("Failed to load years.");
+        setError("Failed to initialize app.");
       } finally {
         setLoading(false);
       }
     };
-    fetchYears();
+    init();
   }, []);
 
-  // Cascading effect for events
-  useEffect(() => {
-    if (!selection.year) return;
-    const fetchEvents = async () => {
-      try {
-        setLoading(true);
-        const res = await fetch(`/options/events?year=${selection.year}`);
-        if (!res.ok) throw new Error('Failed to fetch events');
-        const data = await res.json();
-        setOptions(prev => ({ ...prev, events: data, sessions: [], drivers: [] }));
-        setSelection(prev => ({ ...prev, event: '', session: '', selectedDrivers: [] }));
-      } catch (err) {
-        setError("Invalid session parameters.");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchEvents();
-  }, [selection.year]);
+  // Handlers with integrated fetching
+  const handleYearChange = async (newYear: string) => {
+    setSelection(prev => ({ ...prev, year: newYear, event: '', session: '', selectedDrivers: [] }));
+    if (!newYear) return;
 
-  // Cascading effect for sessions
-  useEffect(() => {
-    if (!selection.year || !selection.event) return;
-    const fetchSessions = async () => {
-      try {
-        setLoading(true);
-        const res = await fetch(`/options/sessions?year=${selection.year}&event=${selection.event}`);
-        if (!res.ok) throw new Error('Failed to fetch sessions');
-        const data = await res.json();
-        setOptions(prev => ({ ...prev, sessions: data, drivers: [] }));
-        setSelection(prev => ({ ...prev, session: '', selectedDrivers: [] }));
-      } catch (err) {
-        setError("Session data unavailable.");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchSessions();
-  }, [selection.year, selection.event]);
+    try {
+      setLoading(true);
+      const events = await fetchEvents(newYear);
+      setOptions(prev => ({ ...prev, events, sessions: [], drivers: [] }));
+    } catch (e) {
+      setError("Failed to load events.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  // Cascading effect for drivers
-  useEffect(() => {
-    if (!selection.year || !selection.event || !selection.session) return;
-    const fetchDrivers = async () => {
-      try {
-        setLoading(true);
-        const res = await fetch(`/options/drivers?year=${selection.year}&event=${selection.event}&session=${selection.session}`);
-        if (!res.ok) throw new Error('Failed to fetch drivers');
-        const data = await res.json();
-        // Backend returns [{id, code, name}, ...], map to codes
-        const driverCodes = data.map((d: any) => d.code).filter(Boolean);
-        setOptions(prev => ({ ...prev, drivers: driverCodes }));
-        setSelection(prev => ({ ...prev, selectedDrivers: [] }));
-      } catch (err) {
-        setError("Entry list inaccessible.");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchDrivers();
-  }, [selection.year, selection.event, selection.session]);
+  const handleEventChange = async (newEvent: string) => {
+    setSelection(prev => ({ ...prev, event: newEvent, session: '', selectedDrivers: [] }));
+    if (!selection.year || !newEvent) return;
+
+    try {
+      setLoading(true);
+      const sessions = await fetchSessions(selection.year, newEvent);
+      setOptions(prev => ({ ...prev, sessions, drivers: [] }));
+    } catch (e) {
+      setError("Failed to load sessions.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSessionChange = async (newSession: string) => {
+    setSelection(prev => ({ ...prev, session: newSession, selectedDrivers: [] }));
+    if (!selection.year || !selection.event || !newSession) return;
+
+    try {
+      setLoading(true);
+      const drivers = await fetchDrivers(selection.year, selection.event, newSession);
+      setOptions(prev => ({ ...prev, drivers }));
+    } catch (e) {
+      setError("Failed to load drivers.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadLatest = async () => {
+    if (!latestEvent) return;
+    try {
+      setLoading(true);
+      setLatestEvent(null); // Dismiss notification logic
+
+      const { year, event, session } = latestEvent;
+      const yearStr = year.toString();
+
+      // Fetch all necessary data
+      // 1. Events
+      const events = await fetchEvents(yearStr);
+      // 2. Sessions
+      const sessions = await fetchSessions(yearStr, event);
+      // 3. Drivers
+      const drivers = await fetchDrivers(yearStr, event, session);
+
+      setOptions(prev => ({ ...prev, events, sessions, drivers }));
+      setSelection(prev => ({
+        ...prev,
+        year: yearStr,
+        event: event,
+        session: session,
+        selectedDrivers: []
+      }));
+
+    } catch (e) {
+      console.error(e);
+      setError("Failed to auto-load latest event.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleDownload = () => {
     if (!selection.year || !selection.event || !selection.session) {
@@ -205,8 +254,6 @@ const App: React.FC = () => {
       return;
     }
 
-    // For DISABLED, we optionally clear selectedDrivers before sending, or backend ignores.
-    // For UX clarity, we send empty string if disabled.
     const driversToSend = config.driverSelection === 'DISABLED' ? [] : selection.selectedDrivers;
 
     setError(null);
@@ -229,12 +276,7 @@ const App: React.FC = () => {
     setSelection(prev => {
       const isSelected = prev.selectedDrivers.includes(driver);
 
-      // Enforce Compare Limit
       if (!isSelected && config.driverSelection === 'COMPARE_TWO' && prev.selectedDrivers.length >= 2) {
-        // Replace the first one or prevent? Let's prevent for clarity or maybe replace oldest.
-        // User asked "Prevent...". Let's simply not add if full, or maybe shift.
-        // Simplest: Don't add if already 2 for compare.
-        // Better UX: Shift behavior (remove first, add new) is usually nicer but let's stick to simple toggle.
         return prev;
       }
 
@@ -249,8 +291,29 @@ const App: React.FC = () => {
   const currentConfig = EXPORT_CONFIG[selection.type];
 
   return (
-    <div className="min-h-screen pb-20">
+    <div className="min-h-screen pb-20 relative">
       <Header />
+
+      {/* Latest Event Notification */}
+      {latestEvent && (
+        <div className="max-w-3xl mx-auto px-4 mb-8">
+          <div className="bg-neutral-900 border border-[#FF1801] p-4 flex flex-col sm:flex-row justify-between items-center gap-4 shadow-[0_0_20px_rgba(255,24,1,0.15)]">
+            <div className="flex items-center gap-3">
+              <div className="w-2 h-2 bg-[#FF1801] rounded-full animate-pulse"></div>
+              <div>
+                <div className="text-[#FF1801] font-mono text-[10px] uppercase tracking-widest leading-none mb-1">Nuevo Evento Detectado</div>
+                <div className="text-white font-bold uppercase tracking-tight">{latestEvent.event} ({latestEvent.year})</div>
+              </div>
+            </div>
+            <button
+              onClick={loadLatest}
+              className="bg-[#FF1801] hover:bg-white hover:text-[#FF1801] text-white px-6 py-2 font-black uppercase text-sm tracking-tighter transition-colors"
+            >
+              Cargar Datos
+            </button>
+          </div>
+        </div>
+      )}
 
       <main className="max-w-3xl mx-auto px-4">
         {error && (
@@ -268,7 +331,7 @@ const App: React.FC = () => {
               <label className="block text-neutral-500 font-mono text-[10px] uppercase mb-1">Año</label>
               <select
                 value={selection.year}
-                onChange={(e) => setSelection(prev => ({ ...prev, year: e.target.value }))}
+                onChange={(e) => handleYearChange(e.target.value)}
                 className="w-full bg-[#0B0B0B] text-white border-none outline-none appearance-none font-bold text-lg cursor-pointer"
               >
                 <option value="" disabled>SELECCIONAR AÑO</option>
@@ -279,7 +342,7 @@ const App: React.FC = () => {
               <label className="block text-neutral-500 font-mono text-[10px] uppercase mb-1">Evento</label>
               <select
                 value={selection.event}
-                onChange={(e) => setSelection(prev => ({ ...prev, event: e.target.value }))}
+                onChange={(e) => handleEventChange(e.target.value)}
                 className="w-full bg-[#0B0B0B] text-white border-none outline-none appearance-none font-bold text-lg cursor-pointer truncate"
               >
                 <option value="" disabled>SELECCIONAR EVENTO</option>
@@ -290,7 +353,7 @@ const App: React.FC = () => {
               <label className="block text-neutral-500 font-mono text-[10px] uppercase mb-1">Sesión</label>
               <select
                 value={selection.session}
-                onChange={(e) => setSelection(prev => ({ ...prev, session: e.target.value }))}
+                onChange={(e) => handleSessionChange(e.target.value)}
                 className="w-full bg-[#0B0B0B] text-white border-none outline-none appearance-none font-bold text-lg cursor-pointer"
               >
                 <option value="" disabled>ID SESIÓN</option>

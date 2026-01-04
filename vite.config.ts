@@ -11,7 +11,8 @@ export default defineConfig(({ mode }) => {
       proxy: {
         '/options': 'http://127.0.0.1:8000',
         '/export.csv': 'http://127.0.0.1:8000',
-        '/health': 'http://127.0.0.1:8000'
+        '/health': 'http://127.0.0.1:8000',
+        '/latest': 'http://127.0.0.1:8000'
       }
     },
     plugins: [react()],
