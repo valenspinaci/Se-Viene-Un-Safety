@@ -344,56 +344,66 @@ def export_csv(
 
                         for phase in phases_to_check:
                             target_lap = None
+                            is_race_pace = False
+                            race_pace_median_time = None
                             
                             if phase == 'ALL':
-                                # Standard fastest lap
-                                target_lap = d_laps.pick_fastest()
-                            else:
-                                # Look up the time in results
-                                # drv_info acts as the row in results usually? 
-                                # f1_session.get_driver returns Series from results.
-                                q_time = drv_info.get(phase)
-                                
-                                if pd.isna(q_time):
-                                    continue # Driver didn't set time in this phase
-                                
-                                # Find lap matching this time
-                                # Rounding issues? FastF1 results time is usually exact sum of sectors. LapTime is also.
-                                # Let's try exact match with some tolerance if needed.
-                                
-                                # Match LapTime. 
-                                candidates = d_laps[d_laps['LapTime'] == q_time]
-                                if not candidates.empty:
-                                    target_lap = candidates.iloc[0]
+                                # This covers non-split sessions (Practice, Race, Sprint)
+                                if session == 'R': 
+                                    # RACE PACE LOGIC
+                                    # "Race pace = median lap time" (clean laps only)
+                                    is_race_pace = True
+                                    clean_laps = d_laps.pick_track_status('1').pick_wo_box()
+                                    if not clean_laps.empty:
+                                        # Calculate median
+                                        median_timedelta = clean_laps['LapTime'].median()
+                                        if not pd.isna(median_timedelta):
+                                            race_pace_median_time = median_timedelta
+                                            # Create a dummy "target_lap" just to hold the time for the row
+                                            # We grab the first lap just to have a structure, but we override values
+                                            target_lap = clean_laps.iloc[0].copy()
+                                            target_lap['LapTime'] = median_timedelta
                                 else:
-                                    # Fallback: maybe approximate match? or Pick fastest in that generic 'session' window?
-                                    # If exact match fails, it might be due to Deleted lap logic or something? 
-                                    # Actually, let's just pick the lap closest to that time? 
-                                    # Or if not found, we skip? 
-                                    # Let's try exact first. If empty, maybe print warning.
-                                    # Safe fallback: pick matches within 1ms?
+                                    # Standard fastest lap (Practice, Sprint, Quali without split if any)
+                                    target_lap = d_laps.pick_fastest()
+                            else:
+                                # Look up the time in results (Qualifying with Splits)
+                                q_time = drv_info.get(phase)
+                                if pd.isna(q_time): continue 
+                                candidates = d_laps[d_laps['LapTime'] == q_time]
+                                if not candidates.empty: target_lap = candidates.iloc[0]
+                                else:
                                     import datetime
                                     delta = pd.Timedelta(milliseconds=1)
                                     candidates = d_laps[(d_laps['LapTime'] >= q_time - delta) & (d_laps['LapTime'] <= q_time + delta)]
-                                    if not candidates.empty:
-                                        target_lap = candidates.iloc[0]
+                                    if not candidates.empty: target_lap = candidates.iloc[0]
                             
-                            if target_lap is None or pd.isna(target_lap['LapTime']):
+                            if (target_lap is None or pd.isna(target_lap['LapTime'])) and not is_race_pace:
+                                continue
+                            if is_race_pace and race_pace_median_time is None:
                                 continue
 
-                            # Telemetry aggregates
-                            try:
-                                tel = target_lap.get_telemetry()
-                                avg_speed = tel['Speed'].mean() if 'Speed' in tel else None
-                                max_speed = tel['Speed'].max() if 'Speed' in tel else None
-                                throttle_avg = tel['Throttle'].mean() if 'Throttle' in tel else None
-                            except:
-                                avg_speed = None
-                                max_speed = None
-                                throttle_avg = None
+                            # Telemetry aggregates (Skip for Race Pace as it's an average/median metric)
+                            avg_speed = ""
+                            max_speed = ""
+                            throttle_avg = ""
+                            
+                            if not is_race_pace:
+                                try:
+                                    tel = target_lap.get_telemetry()
+                                    s = tel['Speed'].mean() if 'Speed' in tel else None
+                                    m = tel['Speed'].max() if 'Speed' in tel else None
+                                    t = tel['Throttle'].mean() if 'Throttle' in tel else None
+                                    avg_speed = f"{s:.2f}" if s else ""
+                                    max_speed = f"{m:.2f}" if m else ""
+                                    throttle_avg = f"{t:.2f}" if t else ""
+                                except: pass
+
+                            # Metric Name
+                            metric_type = "Race Pace (Median)" if is_race_pace else "Best Lap"
 
                             row = {
-                                "qualifying_phase": phase if phase != 'ALL' else "",
+                                "qualifying_phase": phase if phase != 'ALL' else metric_type,
                                 "event_name": event,
                                 "session": session,
                                 "team": team,
@@ -402,14 +412,14 @@ def export_csv(
                                 "car_number": drv_info['DriverNumber'],
                                 "lap_time": str(target_lap['LapTime']).split('days')[-1].strip(),
                                 "lap_time_ms": target_lap['LapTime'].total_seconds() * 1000,
-                                "tire_compound": target_lap['Compound'],
-                                "average_speed": f"{avg_speed:.2f}" if avg_speed else "",
-                                "max_speed": f"{max_speed:.2f}" if max_speed else "",
-                                "throttle_avg": f"{throttle_avg:.2f}" if throttle_avg else "",
+                                "tire_compound": target_lap['Compound'] if not is_race_pace else "MIXED",
+                                "average_speed": avg_speed,
+                                "max_speed": max_speed,
+                                "throttle_avg": throttle_avg,
                                 "brake_events": "",
-                                "sector1_time": str(target_lap['Sector1Time']).split('days')[-1].strip() if not pd.isna(target_lap['Sector1Time']) else "",
-                                "sector2_time": str(target_lap['Sector2Time']).split('days')[-1].strip() if not pd.isna(target_lap['Sector2Time']) else "",
-                                "sector3_time": str(target_lap['Sector3Time']).split('days')[-1].strip() if not pd.isna(target_lap['Sector3Time']) else "",
+                                "sector1_time": str(target_lap['Sector1Time']).split('days')[-1].strip() if not is_race_pace and not pd.isna(target_lap['Sector1Time']) else "",
+                                "sector2_time": str(target_lap['Sector2Time']).split('days')[-1].strip() if not is_race_pace and not pd.isna(target_lap['Sector2Time']) else "",
+                                "sector3_time": str(target_lap['Sector3Time']).split('days')[-1].strip() if not is_race_pace and not pd.isna(target_lap['Sector3Time']) else "",
                                 "lap_rank_within_team": 0 # to be calculated
                             }
                             team_rows.append(row)

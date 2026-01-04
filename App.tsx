@@ -85,6 +85,12 @@ const EXPORT_CONFIG: Record<ExportType, {
     description: "Telemetría por microsectores de la vuelta de pole position del año anterior.",
     driverSelection: 'DISABLED',
     scopeSelection: 'DISABLED'
+  },
+  [ExportType.SECTOR_RANKINGS]: {
+    displayName: "Rankings por Sector",
+    description: "Ranking de pilotos basado en su mejor tiempo personal en cada sector (S1, S2, S3).",
+    driverSelection: 'DISABLED',
+    scopeSelection: 'DISABLED'
   }
 };
 

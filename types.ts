@@ -11,7 +11,8 @@ export enum ExportType {
   TEAM_PARTNERS = 'team_partners',
   FINAL_SPEED = 'final_speed',
   RACE_PACE = 'race_pace',
-  POLE_MICROSECTORS = 'pole_microsectors'
+  POLE_MICROSECTORS = 'pole_microsectors',
+  SECTOR_RANKINGS = 'sector_rankings'
 }
 
 export enum LapSelector {
