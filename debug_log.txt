@@ -1,0 +1,72 @@
+Starting team_partners for 2025 Abu Dhabi Grand Prix R
+Teams found: ['Red Bull Racing', 'McLaren', 'Ferrari', 'Mercedes', 'Aston Martin', 'Haas F1 Team', 'Kick Sauber', 'Williams', 'Racing Bulls', 'Alpine']
+Processing Red Bull Racing: ['1', '22']
+  Phases to check: ['ALL']
+  Checking phase: ALL for 1
+    pick_fastest returned 0 days 00:01:27.625000
+  Phases to check: ['ALL']
+  Checking phase: ALL for 22
+    pick_fastest returned 0 days 00:01:28.557000
+Processing McLaren: ['81', '4']
+  Phases to check: ['ALL']
+  Checking phase: ALL for 81
+    pick_fastest returned 0 days 00:01:26.765000
+  Phases to check: ['ALL']
+  Checking phase: ALL for 4
+    pick_fastest returned 0 days 00:01:26.818000
+Processing Ferrari: ['16', '44']
+  Phases to check: ['ALL']
+  Checking phase: ALL for 16
+    pick_fastest returned 0 days 00:01:26.725000
+  Phases to check: ['ALL']
+  Checking phase: ALL for 44
+    pick_fastest returned 0 days 00:01:28.094000
+Processing Mercedes: ['63', '12']
+  Phases to check: ['ALL']
+  Checking phase: ALL for 63
+    pick_fastest returned 0 days 00:01:28.599000
+  Phases to check: ['ALL']
+  Checking phase: ALL for 12
+    pick_fastest returned 0 days 00:01:28.029000
+Processing Aston Martin: ['14', '18']
+  Phases to check: ['ALL']
+  Checking phase: ALL for 14
+    pick_fastest returned 0 days 00:01:28.279000
+  Phases to check: ['ALL']
+  Checking phase: ALL for 18
+    pick_fastest returned 0 days 00:01:27.626000
+Processing Haas F1 Team: ['31', '87']
+  Phases to check: ['ALL']
+  Checking phase: ALL for 31
+    pick_fastest returned 0 days 00:01:28.655000
+  Phases to check: ['ALL']
+  Checking phase: ALL for 87
+    pick_fastest returned 0 days 00:01:28.976000
+Processing Kick Sauber: ['27', '5']
+  Phases to check: ['ALL']
+  Checking phase: ALL for 27
+    pick_fastest returned 0 days 00:01:27.050000
+  Phases to check: ['ALL']
+  Checking phase: ALL for 5
+    pick_fastest returned 0 days 00:01:29.114000
+Processing Williams: ['55', '23']
+  Phases to check: ['ALL']
+  Checking phase: ALL for 55
+    pick_fastest returned 0 days 00:01:29.052000
+  Phases to check: ['ALL']
+  Checking phase: ALL for 23
+    pick_fastest returned 0 days 00:01:28.367000
+Processing Racing Bulls: ['6', '30']
+  Phases to check: ['ALL']
+  Checking phase: ALL for 6
+    pick_fastest returned 0 days 00:01:29.375000
+  Phases to check: ['ALL']
+  Checking phase: ALL for 30
+    pick_fastest returned 0 days 00:01:28.886000
+Processing Alpine: ['10', '43']
+  Phases to check: ['ALL']
+  Checking phase: ALL for 10
+    pick_fastest returned 0 days 00:01:27.767000
+  Phases to check: ['ALL']
+  Checking phase: ALL for 43
+    pick_fastest returned 0 days 00:01:27.710000

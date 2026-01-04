@@ -32,8 +32,6 @@ def startup_event():
 def health():
     return {"ok": True}
 
-
-
 @app.get("/health")
 def health():
     return {"ok": True}
@@ -299,7 +297,11 @@ def export_csv(
             # Check if this is a Qualifying session with Q-split
             has_q_split = False
             try:
-                if 'Q1' in f1_session.results.columns:
+                # session.name usually is 'Qualifying', 'Race', etc.
+                # Or check session identifier passed in request 'session' string (e.g. 'Q', 'R')
+                # But strictly, results have Q1/Q2/Q3 columns only in Q.
+                # In Race, results have GridPosition, Position, Points, etc.
+                if session == 'Q' and 'Q1' in f1_session.results.columns:
                     has_q_split = True
             except:
                 pass
