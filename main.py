@@ -155,7 +155,7 @@ def export_csv(
     event: str,
     session: str,
     drivers: Optional[str] = Query(None), # comma separated
-    type: str = Query(..., regex="^(laps|telemetry|compare|team_partners|final_speed|race_pace|pole_microsectors)$"),
+    type: str = Query(..., regex="^(laps|telemetry|compare|team_partners|final_speed|race_pace|pole_microsectors|sector_rankings)$"),
     lap: Optional[str] = Query('fastest', regex="^(fastest|lap_number)$"),
     lap_number: Optional[int] = None
 ):
@@ -373,7 +373,7 @@ def export_csv(
                                 candidates = d_laps[d_laps['LapTime'] == q_time]
                                 if not candidates.empty: target_lap = candidates.iloc[0]
                                 else:
-                                    import datetime
+
                                     delta = pd.Timedelta(milliseconds=1)
                                     candidates = d_laps[(d_laps['LapTime'] >= q_time - delta) & (d_laps['LapTime'] <= q_time + delta)]
                                     if not candidates.empty: target_lap = candidates.iloc[0]
@@ -653,6 +653,96 @@ def export_csv(
                 print(f"Error fetching previous year pole: {e}")
                 # Return empty or error info
                 output_df = pd.DataFrame([{"error": f"Could not retrieve previous year data: {str(e)}" }])
+        
+        elif type == 'sector_rankings':
+            # TASK: Rankings by Sector (S1, S2, S3)
+            # Rank drivers based on their personal best time in each sector.
+            
+            sector_stats = []
+            
+            # Use all drivers if none selected
+            target_drivers = selected_drivers if selected_drivers else f1_session.drivers
+            
+            for d in target_drivers:
+                try:
+                    drv = f1_session.get_driver(d)
+                    if not drv['DriverNumber']: continue
+
+                    d_laps = f1_session.laps.pick_driver(d)
+                    
+                    # exclude in/out laps
+                    clean_laps = d_laps.pick_wo_box()
+                    
+                    # We want best sectors, potentially from different laps.
+                    # Sector times are usually Timedelta.
+                    
+                    # Filters:
+                    # Valid sector times only (not NaT)
+                    
+                    s1_series = clean_laps['Sector1Time'].dropna()
+                    s2_series = clean_laps['Sector2Time'].dropna()
+                    s3_series = clean_laps['Sector3Time'].dropna()
+                    
+                    best_s1 = s1_series.min() if not s1_series.empty else None
+                    best_s2 = s2_series.min() if not s2_series.empty else None
+                    best_s3 = s3_series.min() if not s3_series.empty else None
+                    
+                    # Calculate theoretical best lap (sum of best sectors)
+                    theoretical_best = datetime.timedelta(0)
+                    if best_s1 and best_s2 and best_s3:
+                        theoretical_best = best_s1 + best_s2 + best_s3
+                    else:
+                        theoretical_best = None
+
+                    sector_stats.append({
+                        "driver_code": drv['Abbreviation'],
+                        "driver_name": drv['BroadcastName'] or drv['FullName'],
+                        "team": drv['TeamName'],
+                        "best_s1": best_s1,
+                        "best_s2": best_s2,
+                        "best_s3": best_s3,
+                        "theoretical_best_lap": theoretical_best
+                    })
+                except Exception as ex:
+                    print(f"Error processing sectors for {d}: {ex}")
+                    continue
+            
+            output_df = pd.DataFrame(sector_stats)
+            
+            # Format Timedeltas to strings
+            time_cols = ['best_s1', 'best_s2', 'best_s3', 'theoretical_best_lap']
+            
+            if not output_df.empty:
+                # Add Rankings
+                for col in ['best_s1', 'best_s2', 'best_s3']:
+                    # Rank, handling NaNs (ascending=True, best time is lowest)
+                    # method='min' gives same rank to ties
+                    output_df[f'rank_{col}'] = output_df[col].rank(method='min', ascending=True)
+                
+                # Format string outputs
+                for col in time_cols:
+                    output_df[col] = output_df[col].apply(lambda x: str(x).split('days')[-1].strip() if not pd.isna(x) else "")
+                
+                # Reorder columns
+                cols = [
+                    'driver_code', 'driver_name', 'team',
+                    'best_s1', 'rank_best_s1', 
+                    'best_s2', 'rank_best_s2', 
+                    'best_s3', 'rank_best_s3',
+                    'theoretical_best_lap'
+                ]
+                # Ensure all cols exist
+                final_cols = [c for c in cols if c in output_df.columns]
+                output_df = output_df[final_cols]
+                
+                # efficient sorting? Maybe sort by theoretical best? 
+                # Or just let it be random order? 
+                # Let's sort by theoretical best for the 'main' list, though ranks are explicit.
+                # Actually, user might want to see who is fastest overall.
+                if 'theoretical_best_lap' in output_df.columns:
+                     # We can't sort by the string version easily, but we already converted.
+                     # It's fine, the rank columns tell the story.
+                     pass
         # Convert to CSV
         stream = io.StringIO()
         output_df.to_csv(stream, index=False)
