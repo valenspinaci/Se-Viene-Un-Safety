@@ -93,6 +93,23 @@ def get_drivers(year: int, event: str, session: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/options/teams")
+def get_teams(year: int, event: str, session: str):
+    try:
+        f1_session = fastf1.get_session(year, event, session)
+        f1_session.load(laps=False, telemetry=False, weather=False, messages=False)
+        
+        teams = set()
+        for driver_id in f1_session.drivers:
+            d = f1_session.get_driver(driver_id)
+            if d['TeamName']:
+                teams.add(d['TeamName'])
+                
+        return sorted(list(teams))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/latest/event")
 def get_latest_event():
     try:
@@ -155,6 +172,7 @@ def export_csv(
     event: str,
     session: str,
     drivers: Optional[str] = Query(None), # comma separated
+    teams: Optional[str] = Query(None), # comma separated
     type: str = Query(..., regex="^(laps|telemetry|compare|team_partners|final_speed|race_pace|pole_microsectors|sector_rankings)$"),
     lap: Optional[str] = Query('fastest', regex="^(fastest|lap_number)$"),
     lap_number: Optional[int] = None
@@ -171,6 +189,10 @@ def export_csv(
         if drivers:
             # Clean up comma separated list
             selected_drivers = [d.strip() for d in drivers.split(',') if d.strip()]
+            
+        selected_teams = []
+        if teams:
+            selected_teams = [t.strip() for t in teams.split(',') if t.strip()]
         
         output_df = pd.DataFrame()
         filename = f"export_{year}_{event.replace(' ', '_')}_{session}_{type}.csv"
@@ -317,6 +339,11 @@ def export_csv(
                     drv = f1_session.get_driver(d)
                     team = drv['TeamName']
                     if not team: continue
+                    
+                    # Filter by selected teams if parameter provided
+                    if selected_teams and team not in selected_teams:
+                        continue
+
                     if team not in team_drivers:
                          team_drivers[team] = []
                     team_drivers[team].append(d)
@@ -673,26 +700,16 @@ def export_csv(
                     # exclude in/out laps
                     clean_laps = d_laps.pick_wo_box()
                     
-                    # We want best sectors, potentially from different laps.
-                    # Sector times are usually Timedelta.
+                    # Correct Logic: Use sectors from the single fastest lap
+                    fastest_lap = d_laps.pick_fastest()
                     
-                    # Filters:
-                    # Valid sector times only (not NaT)
-                    
-                    s1_series = clean_laps['Sector1Time'].dropna()
-                    s2_series = clean_laps['Sector2Time'].dropna()
-                    s3_series = clean_laps['Sector3Time'].dropna()
-                    
-                    best_s1 = s1_series.min() if not s1_series.empty else None
-                    best_s2 = s2_series.min() if not s2_series.empty else None
-                    best_s3 = s3_series.min() if not s3_series.empty else None
-                    
-                    # Calculate theoretical best lap (sum of best sectors)
-                    theoretical_best = datetime.timedelta(0)
-                    if best_s1 and best_s2 and best_s3:
-                        theoretical_best = best_s1 + best_s2 + best_s3
-                    else:
-                        theoretical_best = None
+                    if fastest_lap is None or pd.isna(fastest_lap['LapTime']):
+                        continue
+                        
+                    best_s1 = fastest_lap['Sector1Time']
+                    best_s2 = fastest_lap['Sector2Time']
+                    best_s3 = fastest_lap['Sector3Time']
+                    lap_time = fastest_lap['LapTime']
 
                     sector_stats.append({
                         "driver_code": drv['Abbreviation'],
@@ -701,7 +718,7 @@ def export_csv(
                         "best_s1": best_s1,
                         "best_s2": best_s2,
                         "best_s3": best_s3,
-                        "theoretical_best_lap": theoretical_best
+                        "lap_time": lap_time
                     })
                 except Exception as ex:
                     print(f"Error processing sectors for {d}: {ex}")
@@ -710,7 +727,7 @@ def export_csv(
             output_df = pd.DataFrame(sector_stats)
             
             # Format Timedeltas to strings
-            time_cols = ['best_s1', 'best_s2', 'best_s3', 'theoretical_best_lap']
+            time_cols = ['best_s1', 'best_s2', 'best_s3', 'lap_time']
             
             if not output_df.empty:
                 # Add Rankings
@@ -729,7 +746,7 @@ def export_csv(
                     'best_s1', 'rank_best_s1', 
                     'best_s2', 'rank_best_s2', 
                     'best_s3', 'rank_best_s3',
-                    'theoretical_best_lap'
+                    'lap_time'
                 ]
                 # Ensure all cols exist
                 final_cols = [c for c in cols if c in output_df.columns]
@@ -739,7 +756,7 @@ def export_csv(
                 # Or just let it be random order? 
                 # Let's sort by theoretical best for the 'main' list, though ranks are explicit.
                 # Actually, user might want to see who is fastest overall.
-                if 'theoretical_best_lap' in output_df.columns:
+                if 'lap_time' in output_df.columns:
                      # We can't sort by the string version easily, but we already converted.
                      # It's fine, the rank columns tell the story.
                      pass
